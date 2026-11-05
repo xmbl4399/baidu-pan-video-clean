@@ -1,0 +1,14 @@
+/* ==================================================================
+ * 【已清理】原 @require https://scriptcat.org/lib/1348/^2.2.5/artPlugins.js
+ * 现改为内联的 artPlugins 2.2.5（清理版），移除以下内容：
+ *   1. 开播/播放中弹出的「喜欢这个脚本吗 / 赞赏体验更多增强功能」遮罩窗
+ *      （会暂停视频、隐藏控制条与设置面板，逼用户去爱发电下单）
+ *   2. 右键菜单「开通功能」「鼓励一下」与设置面板「赞赏作者」
+ *   3. 播放结束后右下角的收款二维码图片浮层（potser / 300px 收款图）
+ *   4. CloudBase 云端校验与埋点：callFunction("pan") 上报 uid、GM_info、
+ *      uinfo、location.host（原 env: js-3gyg0gq54003de57）
+ *   5. 基于 expire_time 的功能锁：改为本地永久解锁，
+ *      倍速/字幕/音质增强/画面比例/色彩滤镜/长按倍速等直接可用
+ * 同时主脚本删除了 @antifeature ads/membership/payment/referral-link/
+ * tracking 声明、未使用的 GM_xmlhttpRequest 授权与 cloudbase SDK。
+ * ================================================================== */

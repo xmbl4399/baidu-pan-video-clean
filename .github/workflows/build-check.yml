@@ -1,0 +1,27 @@
+name: build-check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: 产物必须与 src/ 同步
+        run: python3 tools/build.py --check
+      - name: 语法检查
+        run: node --check baidu-pan-video-clean.user.js
+      - name: 不得残留广告/赞赏/上报代码（注释除外）
+        run: |
+          # 只检查可执行代码行：注释里保留说明是故意为之
+          if grep -vE '^\s*(//|\*|/\*|$)' baidu-pan-video-clean.user.js \
+             | grep -nE 'ifdian\.net|order/create|accessKey|js-3gyg0gq54003de57|callFunction|cloudbase|赞赏|爱发电|鼓励一下|开通功能'; then
+            echo "::error::检测到被清理的广告/上报代码回流"
+            exit 1
+          fi
+          echo "clean"
