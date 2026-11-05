@@ -2,6 +2,8 @@
 
 在 [百度网盘](https://pan.baidu.com) 网页版视频页上，把原生播放器替换为 [ArtPlayer](https://artplayer.org/)，补上倍速、清晰度切换、剧集列表、字幕（含本地字幕）、音质增强、画面比例与色彩滤镜、长按倍速等能力；**同时清掉原脚本全家桶塞进来的赞赏遮罩、收款二维码、赞助菜单和云端校验埋点**。
 
+仓库：<https://github.com/xmbl4399/baidu-pan-video-clean>
+
 > 本仓库是基于上游脚本 1.2.6 的**清理分支**，不是原作者的官方发布。上游地址见 [溯源](#溯源)。
 
 ## 为什么需要这个仓库
@@ -22,8 +24,8 @@
 ## 安装
 
 1. 装 [ScriptCat](https://scriptcat.org/)（或 Tampermonkey / Violentmonkey）。
-2. 打开 [`baidu-pan-video-clean.user.js`](baidu-pan-video-clean.user.js) 的 Raw 地址，脚本管理器会自动弹出安装页。
-   - 本地文件也可以：新建脚本 → 全选粘贴 → 保存。
+2. 一键安装：[**点这里安装**](https://raw.githubusercontent.com/xmbl4399/baidu-pan-video-clean/main/baidu-pan-video-clean.user.js)
+   —— 脚本管理器会弹出安装页。也可以从源码新建脚本后整体粘贴。
 3. 打开任意百度网盘视频页刷新即可。
 
 生效判据：控制条右侧出现 **720P / 480P / 360P 三档画质 + 播放列表 + 字幕列表**（页面原生只有「字幕 / 倍速 / 流畅」三个按钮），设置里没有「赞赏作者」，右键没有「开通功能」。
