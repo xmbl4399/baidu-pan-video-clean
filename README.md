@@ -74,9 +74,9 @@ tools/
 
 - 在 `document` 的捕获阶段监听 `error`，命中 `e.target === video && video.error.code === 3`（解码错误）时 `stopImmediatePropagation()` + `preventDefault()`。
 - 这样 hls.js 的 `BufferController.onMediaDetaching` 与 artplayer 的 `video:error` 重连逻辑都收不到事件，MediaSource 不重建，`currentTime` 保持不变。Chromium 的 MSE 对 AAC 本身有丢包容错，会自行跳过坏帧继续解码。
-- 兜底：如果连续 25 秒画面没有任何推进（说明解码器真的卡死了），才移除拦截、调用 `recoverMediaError()`，并在 `canplay` 时把播放位置复位到卡住之前，然后 4 秒后重新装上拦截。这样既不掩盖真实故障，也不会因为一个坏包从头播。
+- 兜底：如果连续 8 秒播放位置没有任何推进（`readyState>=3` 且未暂停，说明解码器真的卡死了），才临时撤下拦截、调用 `recoverMediaError()`，在 `canplay` 时把位置设到「卡住处 +5 秒」（第二次 +2 秒）跳过坏包，1.5 秒后重新装上拦截。既不掩盖真实故障，也绝不会回到 00:00。
 
-**实测**：从第 53 集 8:40 起播，一路跨越原来必崩的 590 秒、720 秒位置，连续播放 8 分多钟到 17:16 处 `__wd6.n === 0`（一次错误都没放行），`webkitAudioDecodedByteCount` / `webkitVideoDecodedByteCount` 持续增长，说明音频是正常解码而非静音跳过。
+**实测**：第 53 集从 8:40 起播，一路跨越原来必崩的 590 秒、720 秒位置，连续播到 17:16（`__wd6.n === 0`，一次错误都没放行）；`webkitAudioDecodedByteCount` 从 85 万增长到 134 万，`webkitVideoDecodedByteCount` 同步增长，说明音频是正常解码而非静音跳过。另在卡死态（`readyState=1`、`error.code=3`）上实测兜底：守护自动 `recoverMediaError()` 并把位置设到 542 秒，随后正常播到 707 秒无错。
 
 > 关键点：`MEDIA_ERR_DECODE` **不会**以 fatal 事件到达 `hls.on(Events.ERROR)`，只体现在 `video` 元素自身的 `error` 事件上；而 `error` 事件**不冒泡**，必须用 `document.addEventListener('error', handler, true)` 才能拦在 hls.js / artplayer 之前。
 
