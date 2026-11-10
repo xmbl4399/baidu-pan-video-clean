@@ -57,24 +57,28 @@ tools/
 
 **3. 别动这 9 个插件。** quality / playlist / auto-playbackrate / subtitle / sound / filter / quick / hotkey / info 都通过 `{user, show}` 契约拿解锁状态，清理版已让 `user()` 返回远期 `expire_time`，它们会自动全功能可用。它们内部的 `adToken` 同样是百度的播放参数。
 
-## 已知问题：播放约 30 秒后重载、自动从头播放（1.2.8 已修）
+## 已知问题：播一会儿就重载、自动从头播放（1.2.9 已修）
 
-**现象**：视频播到 30 秒左右突然「重启」——画面铺满重新加载，进度条回到 00:00，如此循环，每轮都在同一秒附近再崩。
+**现象**：视频看着看着突然「重启」——画面重新加载，进度条回到 00:00，过一会儿又崩，各清晰度（720P / 480P / 360P）都会出现。
 
-**根因**：不在脚本，在**百度 720P 转码流本身的时间戳**。抓包与逐段解 MPEG-TS 后确认：
+**根因**：不在脚本，在**百度转码流音频轨里的坏包**。逐段解 MPEG-TS（音频 PID 257）后确认：
 
-- 720P 播放列表共 271 个 10 秒分片，其中分片 4、9、13、18、23、27… 的 PTS（显示时间戳）在段内**倒退 13~23 秒**（例：分片 4 首帧 PTS 6006.93 → 末帧 5993.51，跨度 −13.42s），而分片首尾衔接、TS 连续性计数器、`slice_md5` 都是正常的 —— 是转码器写进去的时间轴回跳，不是切片截断。
-- 浏览器解码器遇到这种回跳直接抛 `MediaError code=3 (MEDIA_ERR_DECODE)`，此时 `buffered` 已经到 39.9 秒、`networkState=1`，可见不是网速问题。
-- 随后 hls.js 走 `recoverMediaError()`：`detachMedia()`（栈里能看到 `HTMLVideoElement.load ← onMediaDetaching`）→ 重建 MediaSource → artplayer 重新加载，`currentTime` 归 0，于是**从头开始**。每轮约 32 秒后又撞上下一个坏分片，形成死循环。
+- 音频 PES 里绝大多数 AAC 帧都是正常的 48kHz 立体声（全片统计 62,279 帧 `sfi=4/ch=2`），但每隔约 50~80 秒会出现一个坏 PES：**第一个 ADTS 头的帧长字段被写成了整个 PES 载荷的长度**（如 6590、6673、4995 字节，正常一帧只有 300~400 字节），后面跟着一段不是 ADTS 帧的拼接残渣，真实帧要到偏移 1498~2539 字节处才开始。
+- Chromium 的音频解码器把它当单帧喂进去，立刻失败并抛
+  `PipelineStatus::PIPELINE_ERROR_DECODE: Failed to send audio packet for decoding: {timestamp=520807412 duration=23219 size=6590}` → `MediaError code=3`。报出来的 `size` 正好等于那个被写坏的帧长，可与上面的解析一一对上。
+- 随后 hls.js 的 `recoverMediaError()` 走 `detachMedia()`（栈里能看到 `HTMLVideoElement.load ← onMediaDetaching`）→ 重建 MediaSource → artplayer 重新加载，`currentTime` 归 0，于是**从头开始**。重建后几十秒又撞上下一个坏 PES，形成循环。
 
-**排除项**：不是 `location.reload()`（全程 `navigation.length===1`、`location.href` 不变、无 beforeunload）；不是广告拦截器；不是网络中断。用页面里独立 `new Hls()` 拉同一地址、完全不经过本脚本，仍在 `ct=29.73` 崩 —— 可以彻底排除脚本嫌疑。
+**排除项**：不是 `location.reload()`（全程 `navigation.length===1`、`location.href` 不变、无 beforeunload）；不是网速（出错时 `buffered` 早已缓冲到几十秒后、`networkState=1`）；不是 CDN（同一分片从 4 个 backhost 拉取，长度与 sha256 完全一致）；也不是某一个清晰度独有 —— 720P、480P、360P 的音频坏包是同一个编码器产物。
 
-**对照**：480P / 360P 同一视频的 PTS 全程严格递增，连续播 273 秒、中途 seek 到 222 秒均**零错误**。所以换 480P 就不会触发。
+**1.2.9 的修法**（`src/artPlugins.clean.js` 的 `customType.hls` 段）：**不重建、不跳转，直接把错误事件吞掉**。
 
-**1.2.8 的修法**（`src/artPlugins.clean.js` 里 `customType.hls` 段）：在 `<video>` 上挂「续播守护」——
-出错时记下 `currentTime + 10s`，等 `loadedmetadata` / `canplay` 重建完成后自动跳回去播放。实测真实页面只错 1 次、跳到 39.72s 后继续播到 108s 无从头重播；对照脚本可连播到 323 秒、累计处理 3 次。
+- 在 `document` 的捕获阶段监听 `error`，命中 `e.target === video && video.error.code === 3`（解码错误）时 `stopImmediatePropagation()` + `preventDefault()`。
+- 这样 hls.js 的 `BufferController.onMediaDetaching` 与 artplayer 的 `video:error` 重连逻辑都收不到事件，MediaSource 不重建，`currentTime` 保持不变。Chromium 的 MSE 对 AAC 本身有丢包容错，会自行跳过坏帧继续解码。
+- 兜底：如果连续 25 秒画面没有任何推进（说明解码器真的卡死了），才移除拦截、调用 `recoverMediaError()`，并在 `canplay` 时把播放位置复位到卡住之前，然后 4 秒后重新装上拦截。这样既不掩盖真实故障，也不会因为一个坏包从头播。
 
-> 关键点：`MEDIA_ERR_DECODE` **不会**以 fatal 事件到达 `hls.on(Events.ERROR)`，必须监听 `video` 元素自身的 `error` 事件才能捕获。
+**实测**：从第 53 集 8:40 起播，一路跨越原来必崩的 590 秒、720 秒位置，连续播放 8 分多钟到 17:16 处 `__wd6.n === 0`（一次错误都没放行），`webkitAudioDecodedByteCount` / `webkitVideoDecodedByteCount` 持续增长，说明音频是正常解码而非静音跳过。
+
+> 关键点：`MEDIA_ERR_DECODE` **不会**以 fatal 事件到达 `hls.on(Events.ERROR)`，只体现在 `video` 元素自身的 `error` 事件上；而 `error` 事件**不冒泡**，必须用 `document.addEventListener('error', handler, true)` 才能拦在 hls.js / artplayer 之前。
 
 ## 验证记录
 
